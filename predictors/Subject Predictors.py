@@ -2,52 +2,41 @@ import numpy as np
 import pandas as pd
 import pickle
 
+#parameters
+FS = 100                      # Hz
+TRIAL_SEC = 60                # seconds per trial
+TRIAL_LEN = TRIAL_SEC * FS    # samples per trial
+NUM_TRIALS = 15
+TRIALS_PER_STORY = 3
 
-# --- Parametri ---
-fs = 100                # Hz
-trial_sec = 60           # secondi per trial
-trial_len = trial_sec * fs  # 6000 campioni per trial
-num_trials = 15
+PRED_FILES = [
+    "path_to_predictor_1.csv",
+    "path_to_predictor_2.csv",
+    "path_to_predictor_3.csv",
+    "path_to_predictor_4.csv",
+    "path_to_predictor_5.csv",
+]
 
-# Lista dei nell'ordine ascoltato dal singolo soggetto
-pred_files = [
-    "surp2_01.csv", "surp9_01.csv", "surp4_01.csv", "surp6_01.csv", "surp5_01.csv"] 
+OUT_PKL = "trials_SUBJECTID_PREDICTOR.pkl"
 
-# Taglia ogni storia ai primi 3 trial e concatena
-pred_total = np.array([])
+max_story_len = TRIALS_PER_STORY * TRIAL_LEN
+chunks = []
 
-for f in pred_files:
-    pred = pd.read_csv(f).values.flatten()
-    max_len = trial_len * 3  # 3 trial per storia
-    if len(pred) > max_len:
-        pred = pred[:max_len]
-    pred_total = np.concatenate((pred_total, pred))
+for path in PRED_FILES:
+    # works whether the CSV has header or not (common when saved via np.savetxt)
+    x = pd.read_csv(path, header=None).to_numpy().ravel()
+    chunks.append(x[:max_story_len])
 
-#  Creazione dei 15 trial da 60s ciascuno 
-trials = []
-start_idx = 0
+pred_total = np.concatenate(chunks) if chunks else np.array([], dtype=float)
 
-for i in range(num_trials):
-    end_idx = start_idx + trial_len
-    if end_idx <= len(pred_total):
-        trial = pred_total[start_idx:end_idx]
-        trials.append(trial)
-        start_idx = end_idx
-    else:
-        # Se non ci sono abbastanza campioni, riempi con zeri
-        trial = np.zeros(trial_len)
-        remaining = len(pred_total) - start_idx
-        if remaining > 0:
-            trial[:remaining] = pred_total[start_idx:]
-        trials.append(trial)
-        start_idx = len(pred_total)
+#creation trials
+total_needed = NUM_TRIALS * TRIAL_LEN
+padded = np.zeros(total_needed, dtype=float)
+n_copy = min(len(pred_total), total_needed)
+padded[:n_copy] = pred_total[:n_copy]
 
-#  Converti in array 2D (trial × campioni così da poter essere usati in Eelbrain)
-trials_array = np.stack(trials)  # shape = (15, 6000)
+trials_array = padded.reshape(NUM_TRIALS, TRIAL_LEN)  # shape: (NUM_TRIALS, TRIAL_LEN)
 
-
-
-# Salva in pickle
-with open("trials_Subject19_surp_01.pkl", "wb") as f: 
-    pickle.dump({"trials": trials_array, "fs": fs}, f)
-
+#save pickle
+with open(OUT_PKL, "wb") as f:
+    pickle.dump({"trials": trials_array, "fs": FS}, f)
